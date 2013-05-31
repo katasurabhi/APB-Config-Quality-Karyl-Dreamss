@@ -1,0 +1,73 @@
+/***************************************************************************************/
+/*! \file APBUberPostProcessBrightPassPixelShader.usf
+*
+* \brief Pixel shader the performs the bloom bright pass.
+*
+* \b NOW_OWNER: SJT    14/11/2008 <BR>
+*
+* (c) 2008 Real Time Worlds Ltd.
+****************************************************************************************/
+
+#include "Common.usf"
+
+sampler2D FilterTexture;
+sampler2D AdaptedLuminance;
+
+half BloomAlpha;
+half BloomThreshold;
+half BloomStrength;
+half BloomMinDarken;
+
+half DOFFocusDistance;
+half DOFTransitionDistance;
+half DOFMaxBlurForeground;
+half DOFMaxBlurBackground;
+
+float MiddleGrey;
+
+// The per-color weighting to be used for luminance calculations in RGB order.
+static const half3 LuminanceVector = float3(0.3, 0.59, 0.11);
+
+void Main(
+	in float2 UV : TEXCOORD0,
+	out float4 OutColor : COLOR0
+	)
+{
+	// Scale up as the colour is packed into the fixed-point filter texture.
+	half4 SrcColour = tex2D(FilterTexture, UV) * float4(MAX_SCENE_COLOR, MAX_SCENE_COLOR, MAX_SCENE_COLOR, 65536.0f);
+
+	// Scale the colour by the adapted luminance so dim stuff that appears bright
+	// because of adaption will still bloom.
+	//half fAdaptedLuminance = tex2D(AdaptedLuminance, float2(0.5f, 0.5f)).r;
+	//SrcColour *= MiddleGrey / fAdaptedLuminance;
+
+	// Calculate DOF stuff.
+	float pixelDist=SrcColour.a;
+	float transDist=(pixelDist-DOFFocusDistance)/DOFTransitionDistance;
+	float clampedBlurParam=clamp(transDist, -DOFMaxBlurForeground, DOFMaxBlurBackground);
+	float absBlurParam=abs(clampedBlurParam);
+	float finalBlurParam=max(0, abs(clampedBlurParam)-0.2);
+	float reqMinDarken=min(max(finalBlurParam, BloomMinDarken), 0.25);
+
+	// Select only bright or distant colours.
+	//float finalScalar = max(reqMinDarken, (dot(SrcColour.rgb, SrcColour.rgb)-BloomThreshold)*BloomStrength);	// UI-controlled, weighted scale with revised max()
+	//float finalScalar=max(reqMinDarken, (dot(SrcColour.rgb, float3(0.33,0.34,0.33))-BloomThreshold)*BloomStrength);	// UI-controlled, weighted scale with revised max()
+
+	// Experimental:
+	//OutColor.rgb = max(SrcColour - BloomThreshold, 0);
+	//OutColor.rgb = pow(OutColor.rgb, 2) / (float3(1,1,1) + OutColor.rgb);
+	//OutColor.a = dot(OutColor.rgb, float3(0.33,0.34,0.33));
+
+	half SceneLuminance = dot(SrcColour.rgb, LuminanceVector);
+	half TargetLuminance = max(SceneLuminance - BloomThreshold, 0);
+	TargetLuminance = (TargetLuminance * TargetLuminance) / (1 + TargetLuminance);
+
+	half finalScalar = TargetLuminance / (SceneLuminance + 0.0001);
+	finalScalar = max(reqMinDarken, finalScalar);
+
+	OutColor.rgb = SrcColour.rgb * finalScalar;
+	OutColor.a   = finalScalar;
+
+	// Scale to fit into the fixed-point buffer.
+	OutColor /= MAX_SCENE_COLOR;
+}

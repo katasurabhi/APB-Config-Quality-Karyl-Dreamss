@@ -1,0 +1,25 @@
+/*=============================================================================
+	FilterVertexShader.usf: Filter vertex shader source.
+	Copyright 1998-2007 Epic Games, Inc. All Rights Reserved.
+=============================================================================*/
+
+#include "Common.usf"
+
+#define SAMPLECOUNT (DOWNSAMPLEFACTOR*DOWNSAMPLEFACTOR/4)
+
+float4 SampleOffsets[(SAMPLECOUNT + 1) / 2];
+float4 ScreenSize;
+
+void Main(
+	float4 InPosition : POSITION,
+	float2 UV : TEXCOORD0,
+	out float4 OutOffsetUVs[(SAMPLECOUNT+1)/2] : TEXCOORD0,
+	out float4 OutPosition : POSITION
+	)
+{
+	for(int OffsetIndex = 0;OffsetIndex < (SAMPLECOUNT + 1) / 2;OffsetIndex++)
+	{
+		OutOffsetUVs[OffsetIndex] = UV.xyyx + SampleOffsets[OffsetIndex];
+	}
+	OutPosition = InPosition;
+}

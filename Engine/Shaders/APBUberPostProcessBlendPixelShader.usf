@@ -1,0 +1,116 @@
+/***************************************************************************************/
+/*! \file APBUberPostProcessBlendPixelShader.usf
+*
+* \brief Pixel shader for blending the blurred bloom colors with the scene color.
+* Also performs tone mapping.
+*
+* \b NOW_OWNER: SJT           03/11/2008 <BR>
+* \b WAS_OWNER: Hugh Malan    20/02/2008 <BR>
+*
+* (c) 2008 Realtime Worlds Ltd.
+****************************************************************************************/
+
+#include "Common.usf"
+#include "PostProcessCommon.usf"
+
+sampler2D BlurredImage;
+
+// Bloom blend parameters.
+half BloomAlpha;
+half BloomPostScale;
+
+// Tone-mapping parameters.
+sampler2D AdaptedLuminance;
+float MiddleGrey;
+float Lwhite;
+
+// Colour adjustment parameters.
+float Brightness;
+float Contrast;
+float ColourPower;
+float Saturation;
+float3 PerChannelPower;
+float3 DesaturatedColour;
+
+#if USE_COLORGRADING
+sampler2D ColorGradingLUT;
+#endif // USE_COLORGRADING
+
+// The per-color weighting to be used for luminance calculations in RGB order.
+static const half3 LuminanceVector = float3(0.3, 0.59, 0.11);
+
+// SJT: Perform tone mapping on a pixel.
+half3 ToneMap(float3 WorldColour)
+{
+	half fAdaptedLuminance = tex2D(AdaptedLuminance, float2(0.5f, 0.5f)).r;
+	
+	half Lworld = dot(WorldColour, LuminanceVector);
+	half Exposure = MiddleGrey / (fAdaptedLuminance + 0.001f);
+
+	half Ladapted = Lworld * Exposure;
+	half Ldisplay = (Ladapted * (1 + Ladapted / (Lwhite * Lwhite))) / (1.0f + Ladapted);
+
+	return WorldColour * Ldisplay / (Lworld + 0.0001);
+}
+
+// SJT: Basic colour adjustment.
+half3 ColourAdjust(half3 InColour)
+{
+	half3 Result = InColour;
+
+	// Saturate before we do anything to prevent whackiness from values outside [0,1]
+	Result = saturate(Result);
+
+	// Power curve.
+	// DISABLED: This wasn't used, and costs a big chunk of time, so I've disabled it.
+	//Result = pow(Result, ColourPower * PerChannelPower);
+
+	// (De)saturate.
+	Result = lerp(dot(Result, LuminanceVector) * DesaturatedColour, Result, Saturation);
+
+	// Contrast adjustment (cubic).
+	Result = Result - Contrast * (Result - 1) * Result * (Result - 0.5);
+
+	// Brightness adjustment (addition).
+	Result = Result + Brightness;
+
+	return Result;
+}
+
+void Main(
+	in float2 UV : TEXCOORD0,
+	in float2 SceneUV : TEXCOORD1,
+	out float4 OutColor : COLOR0
+	)
+{
+	//Scale color back up as it was compressed to the [0-1] range to fit in the fixed point filter buffer
+	half4 rawColor = tex2D(BlurredImage,UV);
+	float3 filteredColor = MAX_SCENE_COLOR * rawColor.rgb * BloomPostScale;
+
+	float4 sceneColor=tex2D(SceneColorTexture,SceneUV);
+
+	float3 BloomResult = 1-(saturate(1-(filteredColor.rgb*BloomAlpha))*saturate(1-lerp(sceneColor.rgb, 0, BloomAlpha*saturate(rawColor.a*4))));
+
+	// SJT: Tone map the HDR colour.
+	half3 ToneMappedColour = ToneMap(BloomResult);
+
+#if USE_COLORGRADING
+	// TEMP: Convert to gamma-space.
+	//ToneMappedColour = pow(ToneMappedColour, 2.2);
+
+	half3 AdjustedColour = ColorLookupTable(ColorGradingLUT, ToneMappedColour);
+
+	// TEMP: Convert back to linear space.
+	//ToneMappedColour = pow(ToneMappedColour, 1/2.2);
+#else
+	// SJT: Perform colour adjustment.
+	half3 AdjustedColour = ColourAdjust(ToneMappedColour);
+#endif // USE_COLORGRADING
+
+	// Gamma correction.
+	// DISABLED: This wasn't used when the UI is shown (i.e. most of the time!),
+	// and costs a big chunk of time, so I've disabled it.
+	//half3 LinearColor = AdjustedColour * GammaColorScale + GammaOverlayColor;
+	//OutColor = float4(pow(saturate(LinearColor), GammaInverse), sceneColor.a);
+	OutColor = float4(AdjustedColour, sceneColor.a);
+}

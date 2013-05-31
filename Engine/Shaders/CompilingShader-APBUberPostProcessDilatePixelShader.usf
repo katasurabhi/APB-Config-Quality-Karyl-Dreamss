@@ -1,0 +1,21 @@
+/***************************************************************************************/
+/*! \file APBUberPostProcessDilatePixelShader.usf
+*
+* \brief Pixel shader for dilating the foreground circle-of-confusion prior to blurring it.
+*
+* \b NOW_OWNER: SJT    2/8/2010 <BR>
+*
+* (c) 2010 Realtime Worlds Ltd.
+****************************************************************************************/
+
+#include "Common.usf"
+
+sampler2D FilterTexture;
+
+void Main(
+	float4 InOffsetUVs[(NUM_SAMPLES + 1) / 2] : TEXCOORD0,
+	out float4 OutColor : COLOR0
+	)
+{
+
+}

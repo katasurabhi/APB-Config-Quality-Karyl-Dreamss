@@ -1,0 +1,43 @@
+/***************************************************************************************/
+/*! \file APBUberPostProcessDownsamplePixelShader.usf
+*
+* \brief Bloom downsample pixel shader source.
+*
+* \b NOW_OWNER: Hugh Malan    20/2/2008 <BR>
+*
+* (c) 2008 Realtime Worlds Ltd.
+****************************************************************************************/
+
+#include "Common.usf"
+
+#define SAMPLECOUNT (DOWNSAMPLEFACTOR*DOWNSAMPLEFACTOR/4)
+static float SampleWeight = 1.0f / ((float) SAMPLECOUNT);
+
+sampler2D SceneTexture;
+
+void Main(
+	float4 InOffsetUVs[(SAMPLECOUNT+1)/2] : TEXCOORD0,
+	out float4 OutColor : COLOR0
+	)
+{
+	int SampleIndex;
+	half4 Sum = 0;
+
+	// Sum all samples.
+	UNROLL
+	for(SampleIndex = 0;SampleIndex < SAMPLECOUNT - 1;SampleIndex += 2)
+	{
+		Sum += tex2D(SceneTexture,InOffsetUVs[SampleIndex / 2].xy);
+		Sum += tex2D(SceneTexture,InOffsetUVs[SampleIndex / 2].wz);
+	}
+	if(SampleIndex < SAMPLECOUNT)
+	{
+		Sum += tex2D(SceneTexture,InOffsetUVs[SampleIndex / 2].xy);
+	}
+
+	// Average them.
+	OutColor = Sum * SampleWeight;
+
+	// Scale to fit into the fixed-point buffer.
+	OutColor /= float4(MAX_SCENE_COLOR, MAX_SCENE_COLOR, MAX_SCENE_COLOR, 65536.0f);
+}
